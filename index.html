@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -236,7 +235,29 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 <script>
 const SECTOR_MAP={CWBC:'XLF',EBF:'XLI',NECB:'XLF',AGNC:'XLRE',ALK:'JETS',BOKF:'XLF',HBCP:'XLF',NTST:'XLRE',RBB:'XLF',SFBS:'XLF',STLD:'XLB',WASH:'XLF',WTFC:'XLF',ZION:'XLF',BOH:'XLF',CCBG:'XLF',CLF:'XLB',DX:'XLRE',NNOX:'XLV'};
 const SECTOR_ETFS=['SPY','QQQ','IWM','XLF','XLRE','XLB','XLI','XLV','JETS'];
-const PROXY='https://api.allorigins.win/get?url=';
+const PROXIES = [
+  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+];
+
+async function proxyFetch(url, timeout=14000) {
+  for (let i = 0; i < PROXIES.length; i++) {
+    try {
+      const proxyUrl = PROXIES[i](url);
+      const r = await fetch(proxyUrl, {signal: AbortSignal.timeout(timeout)});
+      if (!r.ok) continue;
+      const j = await r.json();
+      // allorigins wraps in {contents:...}, codetabs returns raw
+      if (j && j.contents) return JSON.parse(j.contents);
+      if (j && (j.chart || j.quoteSummary || j.optionChain)) return j;
+      try { return JSON.parse(j); } catch(e) { return j; }
+    } catch(e) {
+      console.warn(`Proxy ${i} failed for ${url}:`, e.message);
+      if (i === PROXIES.length - 1) throw e;
+    }
+  }
+}
 let allResults=[],curFilter='all',curSort='score',scanning=false;
 
 function avg(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:0;}
@@ -248,18 +269,15 @@ function scoreColor(v,max){const p=v/max;return p>=0.75?'var(--green)':p>=0.4?'#
 
 async function yfFetch(sym,range,interval){
   const url=`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=${interval}&range=${range}`;
-  const r=await fetch(PROXY+encodeURIComponent(url),{signal:AbortSignal.timeout(14000)});
-  const j=await r.json();return JSON.parse(j.contents);
+  return await proxyFetch(url);
 }
 async function yfOpts(sym){
   const url=`https://query1.finance.yahoo.com/v7/finance/options/${sym}`;
-  const r=await fetch(PROXY+encodeURIComponent(url),{signal:AbortSignal.timeout(14000)});
-  const j=await r.json();return JSON.parse(j.contents);
+  return await proxyFetch(url);
 }
 async function yfSummary(sym){
   const url=`https://query2.finance.yahoo.com/v10/finance/quoteSummary/${sym}?modules=earnings,defaultKeyStatistics,financialData`;
-  const r=await fetch(PROXY+encodeURIComponent(url),{signal:AbortSignal.timeout(12000)});
-  const j=await r.json();return JSON.parse(j.contents);
+  return await proxyFetch(url);
 }
 
 function loadURLTickers(){
